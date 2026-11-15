@@ -1,0 +1,29 @@
+Third-party notices
+
+The diffusion-model framework, UNet backbone, and utility code include
+adaptations from the upstream projects listed below. The notices apply to
+those inherited portions. They do not replace the permissions stated in the
+root LICENSE for original OMIT-Diffusion contributions, model weights, or data.
+Original source links in the code are retained.
+
+BBDM
+  Project: https://github.com/xuekt98/BBDM
+  License source: https://github.com/xuekt98/BBDM/blob/main/LICENSE
+  Included notice: licenses/BBDM-MIT.txt
+
+Latent Diffusion
+  Project: https://github.com/CompVis/latent-diffusion
+  License source: https://github.com/CompVis/latent-diffusion/blob/main/LICENSE
+  Included notice: licenses/latent-diffusion-MIT.txt
+
+OpenAI Guided Diffusion and Improved Diffusion
+  Projects: https://github.com/openai/guided-diffusion
+            https://github.com/openai/improved-diffusion
+  License sources: https://github.com/openai/guided-diffusion/blob/main/LICENSE
+                   https://github.com/openai/improved-diffusion/blob/main/LICENSE
+  Included notice: licenses/OpenAI-diffusion-MIT.txt
+
+Denoising Diffusion PyTorch
+  Project: https://github.com/lucidrains/denoising-diffusion-pytorch
+  License source: https://github.com/lucidrains/denoising-diffusion-pytorch/blob/main/LICENSE
+  Included notice: licenses/denoising-diffusion-pytorch-MIT.txt

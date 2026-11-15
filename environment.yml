@@ -1,0 +1,21 @@
+# Minimal training/inference environment, retaining the original versions.
+# CUDA 11.3 wheels: https://pytorch.org/get-started/previous-versions/#v1121
+# The original full export is preserved in environment-legacy.yml.
+name: OMIT
+channels:
+  - defaults
+dependencies:
+  - python=3.9.16
+  - pip=22.3.1
+  - setuptools=65.6.3
+  - wheel=0.38.4
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu113
+      - torch==1.12.1+cu113
+      - torchvision==0.13.1+cu113
+      - numpy==1.24.2
+      - PyYAML==6.0
+      - Pillow==9.4.0
+      - tqdm==4.64.1
+      - einops==0.6.0
+      - tensorboard==2.12.0

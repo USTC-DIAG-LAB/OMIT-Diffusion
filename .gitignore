@@ -1,0 +1,18 @@
+# Local Python files and environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local data and generated training outputs
+/dataset/
+/results/
+events.out.tfevents.*
+
+# Generated evaluation outputs
+/artifacts/predictions/
+/artifacts/evaluation*.json
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db

@@ -1,0 +1,88 @@
+# train, val, and test are independent physical splits.
+# Keep the existing middle-only attention structure and checkpoint behavior.
+runner: OMITRunner
+training:
+  n_epochs: 80
+  n_steps: 100000000
+  save_interval: 1
+  sample_interval: 1
+  validation_interval: 1
+  accumulate_grad_batches: 4
+testing:
+  clip_denoised: true
+  shortcut_sample_steps:
+  - 1
+data:
+  dataset_name: OMIT-Diffusion
+  dataset_type: ct_mri_paired_dirs_ct2mri
+  dataset_config:
+    train_ct_dir: dataset/pelvis/train/CT
+    train_mri_dir: dataset/pelvis/train/MRI
+    val_ct_dir: dataset/pelvis/val/CT
+    val_mri_dir: dataset/pelvis/val/MRI
+    test_ct_dir: dataset/pelvis/test/CT
+    test_mri_dir: dataset/pelvis/test/MRI
+    image_size: 256
+    to_normal: true
+    flip: false
+  train:
+    batch_size: 4
+    shuffle: true
+  val:
+    batch_size: 4
+    shuffle: false
+  test:
+    batch_size: 16
+model:
+  model_name: OMIT-Diffusion
+  model_type: OMIT
+  reset_resume_epoch: false
+  load_ema_as_model: false
+  EMA:
+    use_ema: true
+    ema_decay: 0.995
+    update_ema_interval: 1
+    start_ema_step: 0
+  OMIT:
+    optimizer:
+      weight_decay: 0.0
+      optimizer: Adam
+      lr: 2.0e-06
+      beta1: 0.9
+    params:
+      mt_type: linear
+      objective: grad
+      loss_type: l2
+      sample_step: 1
+      num_timesteps: 1000
+      max_var: 1.0
+      shortcut:
+        enabled: true
+        denoise_timesteps: 128
+        shortcut_fraction: 0.25
+        lambda_base: 1.0
+        lambda_shortcut: 1.0
+      UNetParams:
+        image_size: 256
+        in_channels: 6
+        model_channels: 128
+        out_channels: 3
+        num_res_blocks: 2
+        attention_resolutions: []
+        channel_mult:
+        - 1
+        - 4
+        - 8
+        conv_resample: true
+        dims: 2
+        num_heads: 8
+        num_head_channels: 64
+        use_scale_shift_norm: true
+        resblock_updown: true
+        use_spatial_transformer: false
+        context_dim: null
+        condition_key: concat
+        use_dt_embed: true
+        dt_embed_zero_init: true
+        use_checkpoint: false
+        attention_use_checkpoint: true

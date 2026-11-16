@@ -20,8 +20,6 @@ data:
     train_mri_dir: dataset/brain/train/MRI
     val_ct_dir: dataset/brain/val/CT
     val_mri_dir: dataset/brain/val/MRI
-    test_ct_dir: dataset/brain/val/CT
-    test_mri_dir: dataset/brain/val/MRI
     image_size: 256
     to_normal: true
     flip: false

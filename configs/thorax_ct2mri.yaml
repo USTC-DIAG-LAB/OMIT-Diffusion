@@ -20,8 +20,6 @@ data:
     train_mri_dir: dataset/thorax/train/MRI
     val_ct_dir: dataset/thorax/val/CT
     val_mri_dir: dataset/thorax/val/MRI
-    test_ct_dir: dataset/thorax/val/CT
-    test_mri_dir: dataset/thorax/val/MRI
     image_size: 256
     to_normal: true
     flip: false

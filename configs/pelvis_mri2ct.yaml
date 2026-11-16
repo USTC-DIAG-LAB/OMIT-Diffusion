@@ -1,12 +1,12 @@
 # Paper protocol: 80/20 volume split, seed 42.
-# val and test refer to the same held-out evaluation partition.
+# Two partitions only: train and held-out test.
 runner: OMITRunner
 training:
   n_epochs: 80
   n_steps: 100000000
   save_interval: 1
   sample_interval: 1
-  validation_interval: 1
+  test_loss_interval: 1
   accumulate_grad_batches: 4
 testing:
   clip_denoised: true
@@ -18,18 +18,16 @@ data:
   dataset_config:
     train_ct_dir: dataset/pelvis/train/CT
     train_mri_dir: dataset/pelvis/train/MRI
-    val_ct_dir: dataset/pelvis/val/CT
-    val_mri_dir: dataset/pelvis/val/MRI
+    test_ct_dir: dataset/pelvis/test/CT
+    test_mri_dir: dataset/pelvis/test/MRI
     image_size: 256
     to_normal: true
     flip: false
   train:
     batch_size: 4
     shuffle: true
-  val:
-    batch_size: 4
-    shuffle: false
   test:
+    loss_batch_size: 4
     batch_size: 16
 model:
   model_name: OMIT-Diffusion

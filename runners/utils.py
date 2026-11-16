@@ -106,9 +106,9 @@ def atomic_torch_save(value, path):
 class DistributedEvaluationSampler(Sampler):
     """Assign whole batches to ranks without padding or duplicate examples.
 
-    Validation loss requires complete model batches, so drop_last=True discards
+    Test loss requires complete model batches, so drop_last=True discards
     only the final global incomplete batch. Image export uses drop_last=False.
-    Validation must call the unwrapped model: ranks may have different counts.
+    Evaluation must call the unwrapped model: ranks may have different counts.
     """
     def __init__(self, dataset, batch_size, rank, world_size, drop_last=False):
         self.size = len(dataset)

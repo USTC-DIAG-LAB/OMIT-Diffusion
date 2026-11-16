@@ -39,7 +39,7 @@ to the same partition. Both translation directions use the same partition
 for a given region. The brain and pelvis datasets each contain 180 paired
 volumes. The slice-pair counts reported in the paper are:
 
-| Region | Dataset | Training slice pairs | Evaluation slice pairs |
+| Region | Dataset | Training slice pairs | Test slice pairs |
 | --- | --- | ---: | ---: |
 | Brain | SynthRAD2023 | 24,191 | 6,911 |
 | Pelvis | SynthRAD2023 | 16,812 | 4,203 |
@@ -49,11 +49,10 @@ The 80/20 ratio applies to volumes; the resulting slice counts need not have
 exactly that ratio. Preserve the original volume membership when reproducing
 the reported results.
 
-There are **two physical partitions**, `train` and `val`. The `val` directory
-contains the test set described in the paper and is used only for evaluation,
-not for hyperparameter tuning or checkpoint selection. In the supplied
-configurations, the `val` and `test` stage paths both point to this same
-held-out directory. Training and held-out volumes must remain disjoint.
+There are **two partitions**, `train` and `test`, throughout the configurations,
+dataset loader, and runner. The `test` partition is the held-out set described
+in the paper; it is not used for parameter updates, hyperparameter tuning, or
+checkpoint selection. Training and test volumes must remain disjoint.
 
 ### Image format
 
@@ -73,14 +72,16 @@ Arrange the prepared slices as follows, replacing `<region>` with `brain`,
 ```text
 dataset/<region>/train/CT/
 dataset/<region>/train/MRI/
-dataset/<region>/val/CT/
-dataset/<region>/val/MRI/
+dataset/<region>/test/CT/
+dataset/<region>/test/MRI/
 ```
 
 Update `data.dataset_config` in the corresponding task YAML if your data are
-stored elsewhere. Keep both evaluation-stage path entries pointed to the same
-held-out data. The loader checks directory separation; volume membership is
-established when preparing the split.
+stored elsewhere. Set `train_ct_dir`, `train_mri_dir`, `test_ct_dir`, and
+`test_mri_dir` to the two paired partitions. Existing held-out folders can be
+used directly through the `test_*_dir` fields, regardless of their physical
+directory names; preserve their original volume membership. The loader checks
+directory separation; volume membership is established when preparing the split.
 
 Files are paired by their filename stem after removing a terminal `_ct`, `_mr`,
 or `_mri` suffix, ignoring the case of the suffix. For example,
@@ -180,8 +181,17 @@ python scripts/train.py -c configs/brain_ct2mri.yaml \
 The supplied configurations use a microbatch size of 4. Gradient accumulation
 is controlled by `training.accumulate_grad_batches`. The CLI `--seed` controls
 training randomness; it does not create the volume split described above.
-The paper reproduction protocol keeps `--save_top` disabled and evaluates
-the final checkpoint after the prescribed training schedule.
+Evaluate the final checkpoint after the prescribed training schedule.
+Checkpoints are saved by the epoch/step schedule, without ranking test losses.
+
+During training, test losses and preview images are recorded for monitoring
+only. They do not update parameters, change the learning rate, stop training,
+or select checkpoints. `training.test_loss_interval` controls epoch-level loss
+logging. The same test partition uses `data.test.loss_batch_size: 4` for these
+loss computations and `data.test.batch_size` for inference and image metrics
+(16 for brain/pelvis, 8 for thorax). Loss logging requires complete batches
+and may omit the final incomplete batch; standalone evaluation and image
+export include every test slice.
 
 Each new run writes to:
 

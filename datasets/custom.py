@@ -49,10 +49,10 @@ def _pair_ct_mri_paths(ct_dir, mri_dir):
 
 
 class _CTMRIPairedDirsDataset(Dataset):
-    """Paired slices with training and held-out evaluation directories.
+    """Paired slices with separate ``train`` and ``test`` directories.
 
-    ``val`` and ``test`` may name the same held-out partition. Both must be
-    separate from the training directory for each modality.
+    Each partition requires a complete CT/MRI directory pair. Test data are
+    held out from training; there is no additional dataset partition.
 
     Input images must be 8-bit slices with the experiment's intensity preprocessing.
     RGB conversion, resizing, tensor conversion, and optional normalization
@@ -63,8 +63,8 @@ class _CTMRIPairedDirsDataset(Dataset):
 
     def __init__(self, dataset_config, stage='train'):
         super().__init__()
-        if stage not in ('train', 'val', 'test'):
-            raise ValueError(f"Unknown dataset stage {stage!r}; expected train, val, or test")
+        if stage not in ('train', 'test'):
+            raise ValueError(f"Unknown dataset stage {stage!r}; expected train or test")
         max_samples = getattr(dataset_config, f'{stage}_max_samples', None)
         if max_samples is not None and (
             isinstance(max_samples, bool)
@@ -74,7 +74,7 @@ class _CTMRIPairedDirsDataset(Dataset):
             raise ValueError(f"{stage}_max_samples must be a positive integer or None")
 
         split_dirs = {}
-        for split_name in ('train', 'val', 'test'):
+        for split_name in ('train', 'test'):
             for modality in ('ct', 'mri'):
                 field = f'{split_name}_{modality}_dir'
                 value = getattr(dataset_config, field, None)
@@ -85,14 +85,13 @@ class _CTMRIPairedDirsDataset(Dataset):
             train_path = split_dirs.get(('train', modality))
             if train_path is None:
                 continue
-            for split_name in ('val', 'test'):
-                path = split_dirs.get((split_name, modality))
-                if path == train_path:
-                    raise ValueError(
-                        f'{split_name}_{modality}_dir and train_{modality}_dir '
-                        f'refer to the same directory: {path}. Training and '
-                        'held-out evaluation directories must be separate.'
-                    )
+            test_path = split_dirs.get(('test', modality))
+            if test_path == train_path:
+                raise ValueError(
+                    f'test_{modality}_dir and train_{modality}_dir '
+                    f'refer to the same directory: {test_path}. Training and '
+                    'held-out evaluation directories must be separate.'
+                )
 
         missing = [
             f'{stage}_{modality}_dir'

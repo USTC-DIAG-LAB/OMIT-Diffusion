@@ -1,5 +1,4 @@
 import argparse
-import copy
 import datetime
 import math
 import os
@@ -52,7 +51,6 @@ class BaseRunner(ABC):
         self.global_step = 0  # Successfully processed microbatches, not optimizer updates.
         self.optimizer_updates = 0
         self.next_batch_idx = 0
-        self.topk_checkpoints = {}
         self._resume_epoch_length = None
         # A failed optimizer/scheduler/EMA update can leave a partially mutated
         # model. Such a state must never be advertised as a resumable snapshot.
@@ -167,7 +165,6 @@ class BaseRunner(ABC):
             'optimizer_updates': int(updates or 0),
         }
         model_states = dict(metadata, model=self.model.state_dict(),
-                            topk_checkpoints=copy.deepcopy(self.topk_checkpoints),
                             epoch_length=getattr(self, 'epoch_length', None))
         if self.use_ema:
             model_states['ema'] = self.ema.shadow
@@ -203,34 +200,35 @@ class BaseRunner(ABC):
             self.restore_ema()
             self.net.train(was_training)
 
-    def validation_step(self, val_batch, epoch, step):
+    def test_loss_step(self, test_batch, epoch, step):
+        """Log a held-out loss without updating parameters or selecting weights."""
         with self.evaluation_scope() as model:
-            return self.loss_fn(model, val_batch, epoch, step, stage='val_step')
+            return self.loss_fn(model, test_batch, epoch, step, stage='test_step')
 
-    def validation_epoch(self, val_loader, epoch):
+    def test_loss_epoch(self, test_loader, epoch):
         totals = torch.zeros(2, dtype=torch.float64, device=self.config.training.device[0])
         # Unequal, nonpadding shards must not use DDP.forward's buffer collectives.
         with self.evaluation_scope() as model:
-            for step, val_batch in enumerate(tqdm(val_loader, disable=not self.is_main_process)):
-                loss = self.loss_fn(model, val_batch, epoch, step, stage='val', write=False)
-                count = int(val_batch[0][0].shape[0])
+            for step, test_batch in enumerate(tqdm(test_loader, disable=not self.is_main_process)):
+                loss = self.loss_fn(model, test_batch, epoch, step, stage='test', write=False)
+                count = int(test_batch[0][0].shape[0])
                 totals[0] += loss.detach().double() * count
                 totals[1] += count
         if self.config.training.use_DDP:
             dist.all_reduce(totals, op=dist.ReduceOp.SUM)
         if totals[1].item() == 0:
-            raise ValueError('Validation has no complete batches for the configured loss batch size')
+            raise ValueError('Test loss has no complete batches for the configured loss batch size')
         average_loss = float((totals[0] / totals[1]).item())
         if self.is_main_process:
-            self.writer.add_scalar('val_epoch/loss', average_loss, epoch)
-            self.writer.add_scalar('val_epoch/sample_count', int(totals[1].item()), epoch)
+            self.writer.add_scalar('test_epoch/loss', average_loss, epoch)
+            self.writer.add_scalar('test_epoch/sample_count', int(totals[1].item()), epoch)
         return average_loss
 
-    def sample_step(self, train_batch, val_batch):
+    def sample_step(self, train_batch, test_batch):
         with self.evaluation_scope() as model:
             path = make_dir(os.path.join(self.config.result.image_path, str(self.global_step)))
             self.sample(model, train_batch, path, stage='train')
-            self.sample(model, val_batch, path, stage='val')
+            self.sample(model, test_batch, path, stage='test')
 
     @abstractmethod
     def print_model_summary(self, net):
@@ -263,27 +261,10 @@ class BaseRunner(ABC):
         # Both files include checkpoint_id, so a partially replaced pair cannot
         # silently be accepted as one consistent resume checkpoint.
 
-    def _save_checkpoints(self, stage, average_loss=None):
+    def _save_checkpoints(self, stage):
         if not self.is_main_process:
             return
         folder = Path(self.config.result.ckpt_path)
-        previous_top = None
-        if self.config.args.save_top and average_loss is not None:
-            old = self.topk_checkpoints.get('top')
-            if math.isfinite(average_loss) and (old is None or average_loss < float(old['loss'])):
-                previous_top = old
-                candidate = {'loss': float(average_loss),
-                             'model_ckpt_name': f'top_model_epoch_{self.global_epoch + 1}.pth',
-                             'optim_sche_ckpt_name': f'top_optim_sche_epoch_{self.global_epoch + 1}.pth',
-                             'checkpoint_dir': str(folder.resolve())}
-                previous_tracker = self.topk_checkpoints
-                self.topk_checkpoints = {'top': candidate}
-                try:
-                    top_states = self.get_checkpoint_states(stage)
-                finally:
-                    self.topk_checkpoints = previous_tracker
-                self._write_checkpoint_pair(candidate['model_ckpt_name'], candidate['optim_sche_ckpt_name'], top_states)
-                self.topk_checkpoints = {'top': candidate}
         states = self.get_checkpoint_states(stage)
         label = str(self.global_epoch + 1) if stage == 'epoch_end' else f'step_{self.global_step}'
         model_name = f'latest_model_{label}.pth'
@@ -296,11 +277,6 @@ class BaseRunner(ABC):
                 for path in folder.glob(pattern):
                     if path.name != keep:
                         remove_file(str(path))
-        if previous_top and Path(previous_top.get('checkpoint_dir', folder)).resolve() == folder.resolve():
-            current = self.topk_checkpoints['top']
-            for key in ('model_ckpt_name', 'optim_sche_ckpt_name'):
-                if previous_top[key] != current[key]:
-                    remove_file(str(folder / previous_top[key]))
 
     def _restore_legacy_update_count(self, accumulation):
         if self.optimizer_updates is not None:
@@ -327,45 +303,46 @@ class BaseRunner(ABC):
         max_steps = int(self.config.training.n_steps)
         if accumulation < 1 or max_steps < 0:
             raise ValueError('accumulate_grad_batches must be positive and n_steps nonnegative')
-        for name in ('sample_interval', 'validation_interval', 'save_interval'):
+        for name in ('sample_interval', 'test_loss_interval', 'save_interval'):
             if getattr(self.config.training, name) <= 0:
                 raise ValueError(f'training.{name} must be positive')
         train_dataset = get_dataset(self.config.data, 'train')
-        val_dataset = get_dataset(self.config.data, 'val')
+        test_dataset = get_dataset(self.config.data, 'test')
+        test_loss_batch_size = self.config.data.test.loss_batch_size
         workers = int(getattr(self.config.training, 'num_workers', 8))
         generator = torch.Generator()
         train_sampler = None
-        val_sampler = None
+        test_sampler = None
         if self.config.training.use_DDP:
             train_sampler = torch.utils.data.distributed.DistributedSampler(
                 train_dataset, shuffle=self.config.data.train.shuffle, seed=self.config.args.seed)
-            val_sampler = DistributedEvaluationSampler(
-                val_dataset, self.config.data.val.batch_size, dist.get_rank(), dist.get_world_size(), drop_last=True)
+            test_sampler = DistributedEvaluationSampler(
+                test_dataset, test_loss_batch_size, dist.get_rank(), dist.get_world_size(), drop_last=True)
         train_loader = DataLoader(train_dataset, batch_size=self.config.data.train.batch_size,
                                   shuffle=self.config.data.train.shuffle if train_sampler is None else False,
                                   sampler=train_sampler, num_workers=workers, drop_last=True, generator=generator)
-        val_loader = DataLoader(val_dataset, batch_size=self.config.data.val.batch_size,
-                                shuffle=False, sampler=val_sampler, num_workers=workers, drop_last=True)
+        test_loader = DataLoader(test_dataset, batch_size=test_loss_batch_size,
+                                 shuffle=False, sampler=test_sampler, num_workers=workers, drop_last=True)
         self.epoch_length = len(train_loader)
         if self.epoch_length == 0:
             raise ValueError('Training dataset must contain at least one complete batch')
-        if len(val_dataset) < self.config.data.val.batch_size:
-            raise ValueError('Validation dataset must contain at least one complete loss batch')
+        if len(test_dataset) < test_loss_batch_size:
+            raise ValueError('Test dataset must contain at least one complete loss batch')
         if self.next_batch_idx and self._resume_epoch_length not in (None, self.epoch_length):
             raise ValueError('Cannot resume a batch cursor after the training loader length changed; reset the resume epoch')
         if not 0 <= self.next_batch_idx <= self.epoch_length:
             raise ValueError('Checkpoint next_batch_idx is outside this training epoch')
         self._restore_legacy_update_count(accumulation)
         self._commit_progress()
-        if len(val_dataset) % self.config.data.val.batch_size:
-            self.logger('Validation loss omits the final incomplete global batch; full image evaluation does not.')
+        if len(test_dataset) % test_loss_batch_size:
+            self.logger('Test loss omits the final incomplete global batch; full image evaluation does not.')
         self.logger(f'{self.epoch_length} batches per epoch; max_steps={max_steps} counts processed microbatches')
 
         try:
             if self.config.args.sample_at_start:
                 if self.is_main_process:
                     generator.manual_seed(self.config.args.seed + self.global_epoch)
-                    self.sample_step(next(iter(train_loader)), next(iter(val_loader)))
+                    self.sample_step(next(iter(train_loader)), next(iter(test_loader)))
                 if self.config.training.use_DDP:
                     dist.barrier()
             for epoch in range(self.global_epoch, self.config.training.n_epochs):
@@ -418,26 +395,22 @@ class BaseRunner(ABC):
                         log_loss /= dist.get_world_size()
                     pbar.set_description(f'Epoch {epoch + 1}; step {self.global_step}; loss {log_loss.item():.4f}')
                     if self.global_step % 50 == 0:
-                        val_batch = next(iter(val_loader), None)
-                        if val_batch is not None:
-                            self.validation_step(val_batch, epoch, self.global_step)
+                        test_batch = next(iter(test_loader), None)
+                        if test_batch is not None:
+                            self.test_loss_step(test_batch, epoch, self.global_step)
                     sample_period = max(1, int(self.config.training.sample_interval * self.epoch_length))
                     if self.is_main_process and self.global_step % sample_period == 0:
-                        self.sample_step(train_batch, next(iter(val_loader)))
+                        self.sample_step(train_batch, next(iter(test_loader)))
 
                 epoch_complete = self.next_batch_idx == self.epoch_length
-                average_loss = None
-                if epoch_complete and ((epoch + 1) % self.config.training.validation_interval == 0
+                if epoch_complete and ((epoch + 1) % self.config.training.test_loss_interval == 0
                                        or epoch + 1 == self.config.training.n_epochs):
-                    average_loss = self.validation_epoch(val_loader, epoch)
+                    self.test_loss_epoch(test_loader, epoch)
                 reached_budget = self.global_step >= max_steps
                 should_save = reached_budget or epoch + 1 == self.config.training.n_epochs or (
                     epoch_complete and (epoch + 1) % self.config.training.save_interval == 0)
                 if should_save:
-                    self._save_checkpoints('epoch_end' if epoch_complete else 'mid_epoch', average_loss)
-                elif self.config.args.save_top and average_loss is not None:
-                    # A fresh best result must not be discarded between regular saves.
-                    self._save_checkpoints('epoch_end', average_loss)
+                    self._save_checkpoints('epoch_end' if epoch_complete else 'mid_epoch')
                 self.logger('training time: ' + str(datetime.timedelta(seconds=int(time.time() - start_time))))
                 if self.config.training.use_DDP:
                     dist.barrier()

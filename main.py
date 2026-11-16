@@ -40,7 +40,6 @@ def parse_args_and_config(argv=None):
     parser.add_argument('-t', '--train', action='store_true', default=False, help='train the model')
     parser.add_argument('--sample_to_eval', action='store_true', default=False, help='sample for evaluation')
     parser.add_argument('--sample_at_start', action='store_true', default=False, help='Generate a preview before the first training batch')
-    parser.add_argument('--save_top', action='store_true', default=False, help="save top loss checkpoint")
 
     parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids, 0,1,2,3 cpu=-1')
     parser.add_argument('--port', type=str, default='12355', help='DDP master port')

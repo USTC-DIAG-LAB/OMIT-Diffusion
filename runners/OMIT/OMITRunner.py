@@ -1,7 +1,5 @@
 import os
-import copy
 import warnings
-from pathlib import Path
 
 import torch
 from tqdm.autonotebook import tqdm
@@ -76,18 +74,12 @@ class OMITRunner(BaseRunner):
                 self.global_step = 0
                 self.next_batch_idx = 0
                 self.optimizer_updates = 0
-                self.topk_checkpoints = {}
             else:
                 self.global_epoch = int(states.get("epoch", 0))
                 self.global_step = int(states.get("step", 0))
                 self.next_batch_idx = int(states.get("next_batch_idx", 0))
                 self.optimizer_updates = states.get("optimizer_updates")
                 self._resume_epoch_length = states.get("epoch_length")
-                self.topk_checkpoints = copy.deepcopy(states.get("topk_checkpoints", {}))
-                if "top" in self.topk_checkpoints:
-                    self.topk_checkpoints["top"].setdefault(
-                        "checkpoint_dir", str(Path(self.config.model.model_load_path).resolve().parent)
-                    )
 
             load_ema_as_model = (
                 self.config.model.load_ema_as_model
@@ -195,7 +187,7 @@ class OMITRunner(BaseRunner):
         from PIL import Image
 
         Image.fromarray(image_grid).save(os.path.join(sample_path, f"shortcut_{steps}_steps.png"))
-        if stage != "test":
+        if self.config.args.train:
             self.writer.add_image(f"{stage}_shortcut_{steps}_steps", image_grid, self.global_step, dataformats="HWC")
 
         image_grid = get_image_grid(x_cond.to("cpu"), grid_size, to_normal=self.config.data.dataset_config.to_normal)

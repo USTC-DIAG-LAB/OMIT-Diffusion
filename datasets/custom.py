@@ -49,7 +49,10 @@ def _pair_ct_mri_paths(ct_dir, mri_dir):
 
 
 class _CTMRIPairedDirsDataset(Dataset):
-    """Paired slices from independent ``train``, ``val``, and ``test`` splits.
+    """Paired slices with training and held-out evaluation directories.
+
+    ``val`` and ``test`` may name the same held-out partition. Both must be
+    separate from the training directory for each modality.
 
     Input images must be 8-bit slices with the experiment's intensity preprocessing.
     RGB conversion, resizing, tensor conversion, and optional normalization
@@ -79,18 +82,17 @@ class _CTMRIPairedDirsDataset(Dataset):
                     split_dirs[(split_name, modality)] = Path(value).expanduser().resolve()
 
         for modality in ('ct', 'mri'):
-            seen = {}
-            for split_name in ('train', 'val', 'test'):
+            train_path = split_dirs.get(('train', modality))
+            if train_path is None:
+                continue
+            for split_name in ('val', 'test'):
                 path = split_dirs.get((split_name, modality))
-                if path is None:
-                    continue
-                if path in seen:
+                if path == train_path:
                     raise ValueError(
-                        f'{split_name}_{modality}_dir and {seen[path]}_{modality}_dir '
-                        f'refer to the same directory: {path}. Use independent '
-                        'train, val, and test splits.'
+                        f'{split_name}_{modality}_dir and train_{modality}_dir '
+                        f'refer to the same directory: {path}. Training and '
+                        'held-out evaluation directories must be separate.'
                     )
-                seen[path] = split_name
 
         missing = [
             f'{stage}_{modality}_dir'

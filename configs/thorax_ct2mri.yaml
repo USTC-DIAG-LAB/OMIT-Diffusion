@@ -1,5 +1,5 @@
-# train, val, and test are independent physical splits.
-# Keep the existing middle-only attention structure and checkpoint behavior.
+# Paper protocol: 80/20 volume split, seed 42.
+# val and test refer to the same held-out evaluation partition.
 runner: OMITRunner
 training:
   n_epochs: 80
@@ -20,8 +20,8 @@ data:
     train_mri_dir: dataset/thorax/train/MRI
     val_ct_dir: dataset/thorax/val/CT
     val_mri_dir: dataset/thorax/val/MRI
-    test_ct_dir: dataset/thorax/test/CT
-    test_mri_dir: dataset/thorax/test/MRI
+    test_ct_dir: dataset/thorax/val/CT
+    test_mri_dir: dataset/thorax/val/MRI
     image_size: 256
     to_normal: true
     flip: false

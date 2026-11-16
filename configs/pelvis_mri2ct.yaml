@@ -20,8 +20,6 @@ data:
     train_mri_dir: dataset/pelvis/train/MRI
     val_ct_dir: dataset/pelvis/val/CT
     val_mri_dir: dataset/pelvis/val/MRI
-    test_ct_dir: dataset/pelvis/val/CT
-    test_mri_dir: dataset/pelvis/val/MRI
     image_size: 256
     to_normal: true
     flip: false
